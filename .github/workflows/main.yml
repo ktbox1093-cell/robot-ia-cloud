@@ -20,7 +20,7 @@ jobs:
         with:
           gradle-version: 8.7
 
-      - name: Generar proyecto Android con Isla Dinámica y Sonidos Cozmo/R2D2
+      - name: Generar proyecto Android depurado
         run: |
           mkdir -p app/src/main/java/com/robotia/app
           mkdir -p app/src/main/res/mipmap-anydpi-v26
@@ -68,8 +68,8 @@ jobs:
                   applicationId = "com.robotia.app"
                   minSdk = 26
                   targetSdk = 34
-                  versionCode = 30
-                  versionName = "3.0"
+                  versionCode = 32
+                  versionName = "3.2"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -273,7 +273,7 @@ jobs:
 
               fun idleLook() {
                   tracking = false
-                  animateGaze((-0.5f..0.5f).random(), 0f)
+                  animateGaze((-6..6).random() / 10f, 0f)
               }
 
               private fun animateGaze(targetX: Float, targetY: Float) {
@@ -304,7 +304,7 @@ jobs:
                               }
                           }
                           a.start()
-                          lx = (-0.6f..0.6f).random()
+                          lx = (-6..6).random() / 10f
                           ly = 0f
                       }
                       handler.postDelayed(this, (3000..6000).random().toLong())
@@ -944,7 +944,7 @@ jobs:
                       setBackgroundColor(Color.parseColor("#0F172A"))
                   }
 
-                  fun addSpinner(label: String, key: String, options: List<String>, values: List<Any>, defIndex: Int) {
+                  fun addSpinnerInt(label: String, key: String, options: List<String>, defIndex: Int) {
                       customContainer.addView(TextView(this).apply {
                           text = label
                           setTextColor(Color.parseColor("#8E9AAF"))
@@ -954,32 +954,42 @@ jobs:
                       val sp = Spinner(this).apply {
                           adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, options)
                       }
-                      if (values.first() is Int) {
-                          sp.setSelection(prefs.getInt(key, defIndex).coerceIn(0, options.size - 1))
-                          sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                              override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                                  prefs.edit().putInt(key, pos).apply()
-                              }
-                              override fun onNothingSelected(parent: AdapterView<*>?) {}
+                      sp.setSelection(prefs.getInt(key, defIndex).coerceIn(0, options.size - 1))
+                      sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                          override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                              prefs.edit().putInt(key, pos).apply()
                           }
-                      } else if (values.first() is Float) {
-                          val current = prefs.getFloat(key, values[defIndex] as Float)
-                          sp.setSelection(values.indexOf(current).coerceAtLeast(0))
-                          sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                              override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                                  prefs.edit().putFloat(key, values[pos] as Float).apply()
-                              }
-                              override fun onNothingSelected(parent: AdapterView<*>?) {}
-                          }
+                          override fun onNothingSelected(parent: AdapterView<*>?) {}
                       }
                       customContainer.addView(sp)
                   }
 
-                  addSpinner("Forma de Ojos (Isla Dinámica)", "eye_shape", listOf("Redondos", "Suaves", "Cápsulas"), listOf(0, 1, 2), 1)
-                  addSpinner("Color Neón", "eye_color", listOf("Cian Apple", "Verde Matrix", "Azul Pro", "Rosa Fucsia", "Naranja Cozmo", "Blanco Puro", "Rojo Alerta", "Amarillo Bot"), listOf(0,1,2,3,4,5,6,7), 0)
-                  addSpinner("Tamaño de Ojos", "eye_scale", listOf("Pequeño (0.8x)", "Normal (1.0x)", "Grande (1.3x)", "Gigante (1.6x)"), listOf(0.8f, 1.0f, 1.3f, 1.6f), 1)
-                  addSpinner("Tono de Voz Robótica", "voice_pitch", listOf("Grave", "Normal", "Agudo / R2D2"), listOf(0.7f, 1.0f, 1.45f), 2)
-                  addSpinner("Velocidad de Voz", "voice_speed", listOf("Lenta", "Normal", "Rápida"), listOf(0.8f, 1.0f, 1.25f), 1)
+                  fun addSpinnerFloat(label: String, key: String, options: List<String>, values: List<Float>, defIndex: Int) {
+                      customContainer.addView(TextView(this).apply {
+                          text = label
+                          setTextColor(Color.parseColor("#8E9AAF"))
+                          textSize = 13f
+                          setPadding(12, 8, 12, 2)
+                      })
+                      val sp = Spinner(this).apply {
+                          adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, options)
+                      }
+                      val current = prefs.getFloat(key, values[defIndex])
+                      sp.setSelection(values.indexOf(current).coerceAtLeast(0))
+                      sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                          override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                              prefs.edit().putFloat(key, values[pos]).apply()
+                          }
+                          override fun onNothingSelected(parent: AdapterView<*>?) {}
+                      }
+                      customContainer.addView(sp)
+                  }
+
+                  addSpinnerInt("Forma de Ojos (Isla Dinámica)", "eye_shape", listOf("Redondos", "Suaves", "Cápsulas"), 1)
+                  addSpinnerInt("Color Neón", "eye_color", listOf("Cian Apple", "Verde Matrix", "Azul Pro", "Rosa Fucsia", "Naranja Cozmo", "Blanco Puro", "Rojo Alerta", "Amarillo Bot"), 0)
+                  addSpinnerFloat("Tamaño de Ojos", "eye_scale", listOf("Pequeño (0.8x)", "Normal (1.0x)", "Grande (1.3x)", "Gigante (1.6x)"), listOf(0.8f, 1.0f, 1.3f, 1.6f), 1)
+                  addSpinnerFloat("Tono de Voz Robótica", "voice_pitch", listOf("Grave", "Normal", "Agudo / R2D2"), listOf(0.7f, 1.0f, 1.45f), 2)
+                  addSpinnerFloat("Velocidad de Voz", "voice_speed", listOf("Lenta", "Normal", "Rápida"), listOf(0.8f, 1.0f, 1.25f), 1)
 
                   rootLayout.addView(customContainer)
 
@@ -1049,8 +1059,8 @@ jobs:
           }
           EOF
 
-      - name: Compilar APK Definitivo
-        run: gradle assembleDebug --no-daemon
+      - name: Compilar APK con reporte detallado
+        run: gradle assembleDebug --info --no-daemon
 
       - uses: actions/upload-artifact@v4
         with:
