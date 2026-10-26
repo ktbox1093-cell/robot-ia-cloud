@@ -1,0 +1,1121 @@
+name: Build APK Robot IA Commercial Cloud
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Generar proyecto Android Comercial
+        run: |
+          mkdir -p app/src/main/java/com/robotia/app
+          mkdir -p app/src/main/res/mipmap-anydpi-v26
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/values
+
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "RobotIA"
+          include(":app")
+          EOF
+
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2g
+          EOF
+
+          cat > app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "com.robotia.app"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.robotia.app"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 20
+                  versionName = "2.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+              <uses-permission android:name="android.permission.CAMERA"/>
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA"/>
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+              <uses-permission android:name="android.permission.CALL_PHONE"/>
+              <uses-permission android:name="android.permission.READ_CONTACTS"/>
+              <uses-permission android:name="android.permission.SEND_SMS"/>
+              <uses-feature android:name="android.hardware.camera" android:required="false"/>
+              <queries>
+                  <intent><action android:name="android.speech.RecognitionService"/></intent>
+                  <intent><action android:name="android.intent.action.TTS_SERVICE"/></intent>
+              </queries>
+              <application
+                  android:label="Robot IA"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".OverlayService"
+                      android:exported="false"
+                      android:foregroundServiceType="specialUse|microphone|camera">
+                      <property
+                          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                          android:value="overlay"/>
+                  </service>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_robot_logo.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:fillColor="#0B0F19"
+                  android:pathData="M0,0h108v108h-108z"/>
+              <path
+                  android:fillColor="#00E5FF"
+                  android:pathData="M30,42h16v24h-16zM62,42h16v24h-16z"/>
+          </vector>
+          EOF
+
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background"/>
+              <foreground android:drawable="@drawable/ic_robot_logo"/>
+          </adaptive-icon>
+          EOF
+
+          cat > app/src/main/res/values/colors.xml <<'EOF'
+          <resources>
+              <color name="ic_launcher_background">#0B0F19</color>
+          </resources>
+          EOF
+
+          cat > app/src/main/java/com/robotia/app/Llm.kt <<'EOF'
+          package com.robotia.app
+
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import java.net.HttpURLConnection
+          import java.net.URL
+
+          object Llm {
+              // URL oficial de tu nube privada en Render conectada y lista[span_1](start_span)[span_1](end_span)
+              private const val CLOUD_PROXY_URL = "https://robot-ia-cloud.onrender.com/api/chat"
+
+              class LlmError(val code: Int, message: String) : Exception(message)
+
+              fun chat(system: String, msgs: JSONArray): String {
+                  val url = URL(CLOUD_PROXY_URL)
+                  val c = url.openConnection() as HttpURLConnection
+                  c.connectTimeout = 15000
+                  c.readTimeout = 40000
+                  c.requestMethod = "POST"
+                  c.setRequestProperty("Content-Type", "application/json")
+                  c.setRequestProperty("Accept", "application/json")
+                  c.doOutput = true
+
+                  val body = JSONObject()
+                      .put("provider", "groq")
+                      .put("model", "llama-3.3-70b-versatile")
+                      .put("system", system)
+                      .put("messages", msgs)
+
+                  c.outputStream.use { it.write(body.toString().toByteArray()) }
+
+                  val code = c.responseCode
+                  val stream = if (code in 200..299) c.inputStream else c.errorStream
+                  val txt = stream?.bufferedReader()?.use { it.readText() } ?: ""
+
+                  if (code !in 200..299) {
+                      throw LlmError(code, "HTTP " + code + ": " + txt.take(200))
+                  }
+
+                  val out = JSONObject(txt)
+                      .optJSONArray("choices")
+                      ?.optJSONObject(0)
+                      ?.optJSONObject("message")
+                      ?.optString("content")
+
+                  if (out.isNullOrBlank()) throw Exception("El servidor no devolvió respuesta")
+                  return out
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/robotia/app/EyesView.kt <<'EOF'
+          package com.robotia.app
+
+          import android.animation.ValueAnimator
+          import android.content.Context
+          import android.graphics.Canvas
+          import android.graphics.Color
+          import android.graphics.Paint
+          import android.graphics.Path
+          import android.graphics.RectF
+          import android.os.Handler
+          import android.os.Looper
+          import android.view.View
+
+          class EyesView(ctx: Context) : View(ctx) {
+              companion object {
+                  const val IDLE = 0
+                  const val LISTENING = 1
+                  const val THINKING = 2
+                  const val SPEAKING = 3
+
+                  val EXPR_NAMES = listOf(
+                      "neutral", "feliz", "triste", "enojado",
+                      "sorprendido", "amor", "sueno", "guino"
+                  )
+                  val COLORS = intArrayOf(
+                      Color.rgb(0, 229, 255), Color.rgb(60, 235, 120), Color.rgb(70, 130, 255),
+                      Color.rgb(255, 110, 190), Color.rgb(255, 150, 40), Color.WHITE,
+                      Color.rgb(255, 70, 70), Color.rgb(255, 220, 60)
+                  )
+              }
+
+              private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+              private val density = ctx.resources.displayMetrics.density
+              private var open = 1f
+              private var lx = 0f
+              private var ly = 0f
+              private var tracking = false
+              private val handler = Handler(Looper.getMainLooper())
+
+              var eyeColor = COLORS[0]
+              var shape = 1
+              var sizeScale = 1.0f
+
+              var expression = 0
+                  set(v) {
+                      field = v
+                      invalidate()
+                  }
+
+              var state = IDLE
+                  set(v) {
+                      field = v
+                      if (v == IDLE) expression = 0
+                      invalidate()
+                  }
+
+              fun lookAt(x: Float, y: Float) {
+                  tracking = true
+                  val sx = lx
+                  val sy = ly
+                  val a = ValueAnimator.ofFloat(0f, 1f)
+                  a.duration = 150
+                  a.addUpdateListener {
+                      val t = it.animatedValue as Float
+                      lx = sx + (x - sx) * t
+                      ly = sy + (y - sy) * t
+                      invalidate()
+                  }
+                  a.start()
+              }
+
+              fun idleLook() {
+                  tracking = false
+              }
+
+              private val loop = object : Runnable {
+                  override fun run() {
+                      val a = ValueAnimator.ofFloat(1f, 0.1f, 1f)
+                      a.duration = 180
+                      a.addUpdateListener {
+                          open = it.animatedValue as Float
+                          invalidate()
+                      }
+                      a.start()
+                      if (!tracking) {
+                          lx = (-1..1).random().toFloat() * 0.8f
+                          ly = 0f
+                      }
+                      handler.postDelayed(this, (3500..6500).random().toLong())
+                  }
+              }
+
+              init {
+                  handler.post(loop)
+              }
+
+              fun stopBlinking() {
+                  handler.removeCallbacks(loop)
+              }
+
+              override fun onMeasure(w: Int, h: Int) {
+                  setMeasuredDimension(
+                      (130 * density * sizeScale).toInt(),
+                      (50 * density * sizeScale).toInt()
+                  )
+              }
+
+              override fun onDraw(c: Canvas) {
+                  val w = width.toFloat()
+                  val h = height.toFloat()
+                  val eh = h * 0.8f
+                  val ew = when (shape) {
+                      0 -> eh * 0.9f
+                      2 -> eh * 0.55f
+                      else -> eh
+                  }
+                  val cy = h / 2
+                  val dx = if (state == THINKING) 0.8f else lx
+                  val dy = if (state == THINKING) -0.8f else ly
+
+                  for (i in 0..1) {
+                      fill.color = eyeColor
+                      val cx = (if (i == 0) w * 0.3f else w * 0.7f) + dx * eh * 0.4f
+                      drawEye(c, i, cx, cy + dy * eh * 0.3f, ew, eh)
+                  }
+              }
+
+              private fun drawEye(c: Canvas, i: Int, cx: Float, cy: Float, ew: Float, eh: Float) {
+                  val ex = expression
+                  if (ex == 5) {
+                      heart(c, cx, cy, eh)
+                      return
+                  }
+                  var hh = eh * open
+                  if (ex == 7 && i == 1) hh = eh * 0.15f
+                  if (hh < 6f) hh = 6f
+
+                  val rect = RectF(cx - ew / 2f, cy - hh / 2f, cx + ew / 2f, cy + hh / 2f)
+                  val r = hh / 2f
+                  c.drawRoundRect(rect, r, r, fill)
+              }
+
+              private fun heart(c: Canvas, cx: Float, cy: Float, eh: Float) {
+                  val s = eh * 0.6f * (0.85f + 0.15f * open)
+                  val p = Path()
+                  p.moveTo(cx, cy + s)
+                  p.cubicTo(cx - s * 1.6f, cy - s * 0.2f, cx - s * 0.7f, cy - s * 1.3f, cx, cy - s * 0.45f)
+                  p.cubicTo(cx + s * 0.7f, cy - s * 1.3f, cx + s * 1.6f, cy - s * 0.2f, cx, cy + s)
+                  p.close()
+                  fill.color = Color.rgb(255, 80, 120)
+                  c.drawPath(p, fill)
+                  fill.color = eyeColor
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/robotia/app/OverlayService.kt <<'EOF'
+          package com.robotia.app
+
+          import android.Manifest
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.Service
+          import android.content.Intent
+          import android.content.SharedPreferences
+          import android.content.pm.PackageManager
+          import android.content.pm.ServiceInfo
+          import android.graphics.Bitmap
+          import android.graphics.ImageFormat
+          import android.graphics.PixelFormat
+          import android.graphics.PointF
+          import android.hardware.camera2.CameraCaptureSession
+          import android.hardware.camera2.CameraCharacteristics
+          import android.hardware.camera2.CameraDevice
+          import android.hardware.camera2.CameraManager
+          import android.media.FaceDetector
+          import android.media.Image
+          import android.media.ImageReader
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.os.Handler
+          import android.os.HandlerThread
+          import android.os.IBinder
+          import android.os.Looper
+          import android.speech.RecognitionListener
+          import android.speech.RecognizerIntent
+          import android.speech.SpeechRecognizer
+          import android.speech.tts.TextToSpeech
+          import android.speech.tts.UtteranceProgressListener
+          import android.view.Gravity
+          import android.view.MotionEvent
+          import android.view.WindowManager
+          import android.widget.Toast
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import java.nio.ShortBuffer
+          import java.text.Normalizer
+          import java.util.Locale
+          import kotlin.math.abs
+
+          class OverlayService : Service() {
+              companion object {
+                  const val SYSTEM_BASE = "Eres Robot IA, un asistente cibernético avanzado estilo Cozmo y Astro Bot que vive en la pantalla del usuario. Responde en español, de forma cálida y en una o dos frases cortas. Empieza SIEMPRE con una emoción: [neutral], [feliz], [triste], [enojado], [sorprendido], [amor], [sueno] o [guino]. Si te piden acción del sistema, añade [ACCION:...]. Si te dan un dato personal, añade [MEMORIA:...]."
+              }
+
+              private lateinit var wm: WindowManager
+              private lateinit var params: WindowManager.LayoutParams
+              private lateinit var eyes: EyesView
+              private val handler = Handler(Looper.getMainLooper())
+              private var recognizer: SpeechRecognizer? = null
+              private var tts: TextToSpeech? = null
+              private var ttsReady = false
+              private val history = JSONArray()
+              private var turn = 0
+              private var pendingAction: String? = null
+
+              private var camera: CameraDevice? = null
+              private var session: CameraCaptureSession? = null
+              private var reader: ImageReader? = null
+              private var camThread: HandlerThread? = null
+              private var detector: FaceDetector? = null
+              private var detW = 0
+              private var detH = 0
+              private var lastFace = 0L
+              private var lastSeen = 0L
+
+              private val r2d2Sounds = listOf("bip bop bzzzt", "wub wup beep", "chirp zzt boop", "whirrr bip", "piip bloop zzt")
+              private val idleSoundRunnable = object : Runnable {
+                  override fun run() {
+                      if (ttsReady && eyes.state == EyesView.IDLE) {
+                          val randomSound = r2d2Sounds.random()
+                          val randomExpr = (1..7).random()
+                          eyes.expression = randomExpr
+                          val prefs = getSharedPreferences("robot", MODE_PRIVATE)
+                          val pitch = prefs.getFloat("voice_pitch", 1.4f)
+                          val speed = prefs.getFloat("voice_speed", 1.1f)
+                          tts?.setPitch(pitch)
+                          tts?.setSpeechRate(speed)
+                          tts?.speak(randomSound, TextToSpeech.QUEUE_FLUSH, null, "r2d2")
+                          handler.postDelayed({
+                              if (eyes.state == EyesView.IDLE) eyes.expression = 0
+                          }, 1500)
+                      }
+                      handler.postDelayed(this, (7000..13000).random().toLong())
+                  }
+              }
+
+              private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                  if (key == "eye_color" || key == "eye_shape" || key == "eye_scale" || key == "voice_pitch" || key == "voice_speed") {
+                      handler.post { applyPrefs() }
+                  }
+              }
+
+              override fun onBind(intent: Intent?): IBinder? = null
+
+              private fun applyPrefs() {
+                  val sp = getSharedPreferences("robot", MODE_PRIVATE)
+                  eyes.eyeColor = EyesView.COLORS[sp.getInt("eye_color", 0).coerceIn(0, EyesView.COLORS.size - 1)]
+                  eyes.shape = sp.getInt("eye_shape", 1).coerceIn(0, 2)
+                  eyes.sizeScale = sp.getFloat("eye_scale", 1.0f)
+                  
+                  val pitch = sp.getFloat("voice_pitch", 1.4f)
+                  val speed = sp.getFloat("voice_speed", 1.1f)
+                  tts?.setPitch(pitch)
+                  tts?.setSpeechRate(speed)
+
+                  params.gravity = Gravity.TOP or Gravity.START
+                  params.x = sp.getInt("posx", 300)
+                  params.y = sp.getInt("posy", 60)
+
+                  eyes.requestLayout()
+                  eyes.invalidate()
+                  try {
+                      wm.updateViewLayout(eyes, params)
+                  } catch (e: Exception) {}
+              }
+
+              override fun onCreate() {
+                  super.onCreate()
+                  val channel = "robot"
+                  val nm = getSystemService(NotificationManager::class.java)
+                  nm.createNotificationChannel(
+                      NotificationChannel(channel, "Robot IA Bot", NotificationManager.IMPORTANCE_LOW)
+                  )
+                  val notif = Notification.Builder(this, channel)
+                      .setContentTitle("Robot IA Activo")
+                      .setSmallIcon(android.R.drawable.ic_dialog_info)
+                      .build()
+                  val prefs = getSharedPreferences("robot", MODE_PRIVATE)
+                  val camOk = prefs.getBoolean("track", true) &&
+                      checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                  if (Build.VERSION.SDK_INT >= 29) {
+                      var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                      if (Build.VERSION.SDK_INT >= 34) {
+                          types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                      }
+                      if (camOk) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                      startForeground(1, notif, types)
+                  } else {
+                      startForeground(1, notif)
+                  }
+
+                  tts = TextToSpeech(this) { status ->
+                      if (status == TextToSpeech.SUCCESS) {
+                          tts?.language = Locale.getDefault()
+                          val pitch = prefs.getFloat("voice_pitch", 1.4f)
+                          val speed = prefs.getFloat("voice_speed", 1.1f)
+                          tts?.setPitch(pitch)
+                          tts?.setSpeechRate(speed)
+
+                          tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                              override fun onStart(id: String?) {}
+                              override fun onDone(id: String?) {
+                                  handler.post { eyes.state = EyesView.IDLE }
+                              }
+                              @Deprecated("Deprecated in Java")
+                              override fun onError(id: String?) {
+                                  handler.post { eyes.state = EyesView.IDLE }
+                              }
+                          })
+                          ttsReady = true
+                          speak("¡Bip bop! Sistema en línea.", "feliz")
+                      }
+                  }
+
+                  wm = getSystemService(WINDOW_SERVICE) as WindowManager
+                  params = WindowManager.LayoutParams(
+                      WindowManager.LayoutParams.WRAP_CONTENT,
+                      WindowManager.LayoutParams.WRAP_CONTENT,
+                      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                          WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                      PixelFormat.TRANSLUCENT
+                  )
+                  params.gravity = Gravity.TOP or Gravity.START
+                  params.x = prefs.getInt("posx", 300)
+                  params.y = prefs.getInt("posy", 60)
+
+                  eyes = EyesView(this)
+                  var startX = 0
+                  var startY = 0
+                  var touchX = 0f
+                  var touchY = 0f
+                  var moved = false
+                  
+                  eyes.setOnTouchListener { _, e ->
+                      when (e.action) {
+                          MotionEvent.ACTION_DOWN -> {
+                              startX = params.x
+                              startY = params.y
+                              touchX = e.rawX
+                              touchY = e.rawY
+                              moved = false
+                          }
+                          MotionEvent.ACTION_MOVE -> {
+                              val dx = (e.rawX - touchX).toInt()
+                              val dy = (e.rawY - touchY).toInt()
+                              if (abs(dx) > 15 || abs(dy) > 15) moved = true
+                              params.x = startX + dx
+                              params.y = startY + dy
+                              try {
+                                  wm.updateViewLayout(eyes, params)
+                              } catch (ex: Exception) {}
+                          }
+                          MotionEvent.ACTION_UP -> {
+                              if (!moved) {
+                                  onTap()
+                              } else {
+                                  prefs.edit()
+                                      .putInt("posx", params.x)
+                                      .putInt("posy", params.y)
+                                      .apply()
+                              }
+                          }
+                      }
+                      true
+                  }
+                  wm.addView(eyes, params)
+                  applyPrefs()
+                  prefs.registerOnSharedPreferenceChangeListener(prefListener)
+
+                  handler.postDelayed(idleSoundRunnable, 8000)
+
+                  if (camOk) startCamera()
+              }
+
+              private fun startCamera() {
+                  try {
+                      val cm = getSystemService(CameraManager::class.java)
+                      val id = cm.cameraIdList.firstOrNull {
+                          cm.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) ==
+                              CameraCharacteristics.LENS_FACING_FRONT
+                      } ?: return
+                      val ch = cm.getCameraCharacteristics(id)
+                      val rot = ch.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 270
+                      val sizes = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                          ?.getOutputSizes(ImageFormat.YUV_420_888) ?: return
+                      val size = sizes
+                          .filter { it.width >= 320 && it.height >= 240 }
+                          .minByOrNull { it.width * it.height } ?: sizes.first()
+                      val step = maxOf(1, size.width / 320)
+                      val ht = HandlerThread("cam")
+                      ht.start()
+                      camThread = ht
+                      val bg = Handler(ht.looper)
+                      cm.openCamera(id, object : CameraDevice.StateCallback() {
+                          override fun onOpened(cam: CameraDevice) {
+                              if (camThread == null) {
+                                  cam.close()
+                                  return
+                              }
+                              camera = cam
+                              try {
+                                  val ir = ImageReader.newInstance(
+                                      size.width, size.height, ImageFormat.YUV_420_888, 2
+                                  )
+                                  reader = ir
+                                  ir.setOnImageAvailableListener({ r ->
+                                      var img: Image? = null
+                                      try {
+                                          img = r.acquireLatestImage()
+                                          val now = System.currentTimeMillis()
+                                          if (img != null && now - lastFace >= 700) {
+                                              lastFace = now
+                                              processImage(img, rot, step)
+                                          }
+                                      } catch (e: Exception) {
+                                      } finally {
+                                          img?.close()
+                                      }
+                                  }, bg)
+                                  cam.createCaptureSession(
+                                      listOf(ir.surface),
+                                      object : CameraCaptureSession.StateCallback() {
+                                          override fun onConfigured(s: CameraCaptureSession) {
+                                              session = s
+                                              try {
+                                                  val req = cam.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+                                                  req.addTarget(ir.surface)
+                                                  s.setRepeatingRequest(req.build(), null, bg)
+                                              } catch (e: Exception) {}
+                                          }
+                                          override fun onConfigureFailed(s: CameraCaptureSession) {}
+                                      },
+                                      bg
+                                  )
+                              } catch (e: Exception) {}
+                          }
+                          override fun onDisconnected(cam: CameraDevice) { cam.close() }
+                          override fun onError(cam: CameraDevice, error: Int) { cam.close() }
+                      }, bg)
+                  } catch (e: Exception) {}
+              }
+
+              private fun processImage(img: Image, rot: Int, step: Int) {
+                  val plane = img.planes[0]
+                  val buf = plane.buffer
+                  val rs = plane.rowStride
+                  val ps = plane.pixelStride
+                  val sw = img.width / step
+                  val sh = img.height / step
+                  val sideways = rot == 90 || rot == 270
+                  val uw0 = if (sideways) sh else sw
+                  val uh = if (sideways) sw else sh
+                  val uw = uw0 - uw0 % 2
+                  if (uw < 40 || uh < 40) return
+                  val px = ShortArray(uw * uh)
+                  for (yu in 0 until uh) {
+                      for (xu in 0 until uw) {
+                          val xs: Int
+                          val ys: Int
+                          when (rot) {
+                              90 -> { xs = yu; ys = sh - 1 - xu }
+                              270 -> { xs = sw - 1 - yu; ys = xu }
+                              180 -> { xs = sw - 1 - xu; ys = sh - 1 - yu }
+                              else -> { xs = xu; ys = yu }
+                          }
+                          val v = buf.get(ys * step * rs + xs * step * ps).toInt() and 0xFF
+                          px[yu * uw + xu] =
+                              (((v shr 3) shl 11) or ((v shr 2) shl 5) or (v shr 3)).toShort()
+                      }
+                  }
+                  val bmp = Bitmap.createBitmap(uw, uh, Bitmap.Config.RGB_565)
+                  bmp.copyPixelsFromBuffer(ShortBuffer.wrap(px))
+                  val cached = detector
+                  val det = if (cached != null && detW == uw && detH == uh) {
+                      cached
+                  } else {
+                      FaceDetector(uw, uh, 1).also {
+                          detector = it
+                          detW = uw
+                          detH = uh
+                      }
+                  }
+                  val faces = arrayOfNulls<FaceDetector.Face>(1)
+                  val n = det.findFaces(bmp, faces)
+                  bmp.recycle()
+                  val f = faces[0]
+                  val now = System.currentTimeMillis()
+                  if (n > 0 && f != null && f.confidence() > 0.4f) {
+                      val p = PointF()
+                      f.getMidPoint(p)
+                      val x = ((0.5f - p.x / uw) * 2f).coerceIn(-1f, 1f)
+                      val y = ((p.y / uh - 0.5f) * 2f).coerceIn(-1f, 1f)
+                      lastSeen = now
+                      handler.post { eyes.lookAt(x, y) }
+                  } else if (lastSeen != 0L && now - lastSeen > 3000) {
+                      lastSeen = 0L
+                      handler.post { eyes.idleLook() }
+                  }
+              }
+
+              private fun stopCamera() {
+                  try { session?.close() } catch (e: Exception) {}
+                  try { camera?.close() } catch (e: Exception) {}
+                  try { reader?.close() } catch (e: Exception) {}
+                  camThread?.quitSafely()
+                  session = null
+                  camera = null
+                  reader = null
+                  camThread = null
+              }
+
+              private fun onTap() {
+                  if (eyes.state == EyesView.IDLE) listen() else stopAll()
+              }
+
+              private fun stopAll() {
+                  turn++
+                  recognizer?.destroy()
+                  recognizer = null
+                  tts?.stop()
+                  eyes.state = EyesView.IDLE
+                  pendingAction = null
+              }
+
+              private fun listen() {
+                  if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+                      speak("Reconocimiento de voz no disponible", "triste")
+                      return
+                  }
+                  recognizer?.destroy()
+                  val r = SpeechRecognizer.createSpeechRecognizer(this)
+                  recognizer = r
+                  r.setRecognitionListener(object : RecognitionListener {
+                      override fun onReadyForSpeech(p: Bundle?) {}
+                      override fun onBeginningOfSpeech() {}
+                      override fun onRmsChanged(v: Float) {}
+                      override fun onBufferReceived(b: ByteArray?) {}
+                      override fun onEndOfSpeech() {}
+                      override fun onError(error: Int) { eyes.state = EyesView.IDLE }
+                      override fun onResults(res: Bundle?) {
+                          val text = res?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                          if (text.isNullOrBlank()) eyes.state = EyesView.IDLE else ask(text)
+                      }
+                      override fun onPartialResults(p: Bundle?) {}
+                      override fun onEvent(type: Int, p: Bundle?) {}
+                  })
+                  val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                  eyes.state = EyesView.LISTENING
+                  r.startListening(i)
+              }
+
+              private fun msg(role: String, text: String): JSONObject =
+                  JSONObject().put("role", role).put("content", text)
+
+              private fun callLlm(msgs: JSONArray) {
+                  val prefs = getSharedPreferences("robot", MODE_PRIVATE)
+                  val rawMem = prefs.getString("robot_memory_json", "[]") ?: "[]"
+                  val memArray = JSONArray(rawMem)
+                  val filteredArray = JSONArray()
+                  val sevenDaysMillis = 7L * 24 * 60 * 60 * 1000
+                  val now = System.currentTimeMillis()
+                  val memoryBuilder = StringBuilder()
+
+                  for (i in 0 until memArray.length()) {
+                      val item = memArray.getJSONObject(i)
+                      if (now - item.getLong("time") <= sevenDaysMillis) {
+                          filteredArray.put(item)
+                          memoryBuilder.append(item.getString("text")).append("; ")
+                      }
+                  }
+                  prefs.edit().putString("robot_memory_json", filteredArray.toString()).apply()
+
+                  val savedMemory = memoryBuilder.toString()
+                  val fullSystem = if (savedMemory.isNotBlank()) {
+                      SYSTEM_BASE + " Recuerdos guardados (últimos 7 días): " + savedMemory
+                  } else {
+                      SYSTEM_BASE
+                  }
+
+                  val mine = ++turn
+                  Thread {
+                      var err: String? = null
+                      val reply = try {
+                          Llm.chat(fullSystem, msgs)
+                      } catch (e: Exception) {
+                          err = e.message ?: "Error desconocido"
+                          "Problema de red."
+                      }
+                      handler.post {
+                          if (mine == turn) {
+                              val f = err
+                              if (f == null) {
+                                  history.put(msg("assistant", reply))
+                              } else {
+                                  history.remove(history.length() - 1)
+                                  Toast.makeText(this, f, Toast.LENGTH_LONG).show()
+                              }
+                              while (history.length() > 20) {
+                                  history.remove(0)
+                                  history.remove(0)
+                              }
+                              if (f == null) {
+                                  val cleanReply = parseMemory(reply)
+                                  val parsedEmotion = parseEmotion(cleanReply)
+                                  speak(parsedEmotion.second, parsedEmotion.first)
+                              } else {
+                                  speak(reply, "triste")
+                              }
+                          }
+                      }
+                  }.start()
+              }
+
+              private fun parseEmotion(reply: String): Pair<String, String> {
+                  val m = Regex("^\\s*\\[([^\\]]{1,15})\\]\\s*").find(reply) ?: return Pair("", reply)
+                  val raw = Normalizer.normalize(m.groupValues[1].lowercase(), Normalizer.Form.NFD)
+                      .replace(Regex("\\p{M}"), "")
+                  val idx = EyesView.EXPR_NAMES.indexOfFirst { raw.startsWith(it.take(3)) }
+                  val text = reply.substring(m.range.last + 1).ifBlank { reply }
+                  return Pair(if (idx >= 0) EyesView.EXPR_NAMES[idx] else "", text)
+              }
+
+              private fun parseMemory(reply: String): String {
+                  val memRegex = Regex("\\[MEMORIA:([^\\]]+)\\]")
+                  val match = memRegex.find(reply)
+                  if (match != null) {
+                      val newMem = match.groupValues[1]
+                      val prefs = getSharedPreferences("robot", MODE_PRIVATE)
+                      val rawMem = prefs.getString("robot_memory_json", "[]") ?: "[]"
+                      val memArray = JSONArray(rawMem)
+                      val newObj = JSONObject().put("time", System.currentTimeMillis()).put("text", newMem)
+                      memArray.put(newObj)
+                      prefs.edit().putString("robot_memory_json", memArray.toString()).apply()
+                  }
+                  return reply.replace(memRegex, "").trim()
+              }
+
+              private fun ask(text: String) {
+                  eyes.state = EyesView.THINKING
+                  history.put(msg("user", text))
+                  callLlm(history)
+              }
+
+              private fun speak(text: String, emo: String = "") {
+                  eyes.state = EyesView.SPEAKING
+                  val idx = EyesView.EXPR_NAMES.indexOf(emo)
+                  eyes.expression = if (idx > 0) idx else 0
+                  tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "robot")
+              }
+
+              override fun onDestroy() {
+                  turn++
+                  handler.removeCallbacks(idleSoundRunnable)
+                  getSharedPreferences("robot", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
+                  stopCamera()
+                  recognizer?.destroy()
+                  tts?.shutdown()
+                  if (::eyes.isInitialized) {
+                      eyes.stopBlinking()
+                      wm.removeView(eyes)
+                  }
+                  super.onDestroy()
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/robotia/app/MainActivity.kt <<'EOF'
+          package com.robotia.app
+
+          import android.Manifest
+          import android.app.Activity
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.graphics.Typeface
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.view.Gravity
+          import android.view.View
+          import android.view.animation.AlphaAnimation
+          import android.view.animation.AnimationSet
+          import android.view.animation.ScaleAnimation
+          import android.widget.AdapterView
+          import android.widget.ArrayAdapter
+          import android.widget.Button
+          import android.widget.CheckBox
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.Spinner
+          import android.widget.TextView
+
+          class MainActivity : Activity() {
+              private lateinit var result: TextView
+              private val prefs by lazy { getSharedPreferences("robot", MODE_PRIVATE) }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  val perms = mutableListOf(
+                      Manifest.permission.RECORD_AUDIO,
+                      Manifest.permission.CAMERA,
+                      Manifest.permission.CALL_PHONE,
+                      Manifest.permission.SEND_SMS
+                  )
+                  if (Build.VERSION.SDK_INT >= 33) perms.add("android.permission.POST_NOTIFICATIONS")
+                  requestPermissions(perms.toTypedArray(), 1)
+
+                  val pad = (24 * resources.displayMetrics.density).toInt()
+                  
+                  val rootLayout = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      gravity = Gravity.CENTER_HORIZONTAL
+                      setPadding(pad, pad, pad, pad)
+                      setBackgroundColor(Color.parseColor("#0B0F19"))
+                  }
+
+                  val animSet = AnimationSet(true).apply {
+                      addAnimation(AlphaAnimation(0f, 1f).apply { duration = 400 })
+                      addAnimation(ScaleAnimation(0.9f, 1f, 0.9f, 1f, ScaleAnimation.RELATIVE_TO_SELF, 0.5f, ScaleAnimation.RELATIVE_TO_SELF, 0.5f).apply { duration = 400 })
+                  }
+                  rootLayout.startAnimation(animSet)
+
+                  val logoView = TextView(this).apply {
+                      text = "🤖 ROBOT IA PRO"
+                      textSize = 26f
+                      typeface = Typeface.DEFAULT_BOLD
+                      setTextColor(Color.parseColor("#00E5FF"))
+                      gravity = Gravity.CENTER
+                      setPadding(0, pad, 0, pad / 2)
+                      setShadowLayer(14f, 0f, 0f, Color.parseColor("#00E5FF"))
+                  }
+                  rootLayout.addView(logoView)
+
+                  val info = TextView(this).apply {
+                      text = "Panel Comercial • Plug & Play (Sin Configuración)"
+                      setTextColor(Color.parseColor("#A0AEC0"))
+                      textSize = 14f
+                      gravity = Gravity.CENTER
+                  }
+                  rootLayout.addView(info)
+
+                  val btnToggleCustom = Button(this).apply {
+                      text = "⚙️ Personalización Ilimitada del Robot"
+                      setBackgroundColor(Color.parseColor("#1A202C"))
+                      setTextColor(Color.parseColor("#00E5FF"))
+                      typeface = Typeface.DEFAULT_BOLD
+                      setPadding(0, 15, 0, 15)
+                  }
+                  rootLayout.addView(btnToggleCustom)
+
+                  val robotCustomContainer = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      visibility = View.GONE
+                      setPadding(0, 15, 0, 15)
+                      setBackgroundColor(Color.parseColor("#121826"))
+                  }
+
+                  val customInfo = TextView(this).apply {
+                      text = "Ajusta tamaño, forma, color y voz a tu gusto:"
+                      setTextColor(Color.WHITE)
+                      textSize = 13f
+                      setPadding(10, 5, 10, 5)
+                  }
+                  robotCustomContainer.addView(customInfo)
+
+                  fun choice(name: String, key: String, options: List<String>, def: Int) {
+                      robotCustomContainer.addView(TextView(this).apply { 
+                          text = name
+                          setTextColor(Color.parseColor("#A0AEC0"))
+                          setPadding(10, 5, 10, 2)
+                      })
+                      val sp = Spinner(this)
+                      sp.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, options)
+                      sp.setSelection(prefs.getInt(key, def).coerceIn(0, options.size - 1))
+                      sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                          override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                              prefs.edit().putInt(key, pos).apply()
+                          }
+                          override fun onNothingSelected(parent: AdapterView<*>?) {}
+                      }
+                      robotCustomContainer.addView(sp)
+                  }
+
+                  fun choiceFloat(name: String, key: String, options: List<String>, values: List<Float>, def: Float) {
+                      robotCustomContainer.addView(TextView(this).apply { 
+                          text = name
+                          setTextColor(Color.parseColor("#A0AEC0"))
+                          setPadding(10, 5, 10, 2)
+                      })
+                      val sp = Spinner(this)
+                      sp.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, options)
+                      val currentVal = prefs.getFloat(key, def)
+                      sp.setSelection(values.indexOf(currentVal).coerceAtLeast(0))
+                      sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                          override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                              prefs.edit().putFloat(key, values[pos]).apply()
+                          }
+                          override fun onNothingSelected(parent: AdapterView<*>?) {}
+                      }
+                      robotCustomContainer.addView(sp)
+                  }
+
+                  choice("Forma de Ojos", "eye_shape", listOf("Redondos", "Suaves", "Cápsulas"), 1)
+                  choice("Color de Ojos", "eye_color", listOf("Cian Tech", "Verde Matrix", "Azul Neón", "Rosa Fucsia", "Naranja Pro", "Blanco Puro", "Rojo Alerta", "Amarillo Bot"), 0)
+                  
+                  robotCustomContainer.addView(TextView(this).apply { 
+                      text = "Escala / Tamaño de Ojos"
+                      setTextColor(Color.parseColor("#A0AEC0"))
+                      setPadding(10, 5, 10, 2)
+                  })
+                  val sizeOptions = listOf("Pequeño (0.8x)", "Normal (1.0x)", "Grande (1.3x)", "Gigante (1.6x)")
+                  val sizeValues = listOf(0.8f, 1.0f, 1.3f, 1.6f)
+                  val sizeSpinner = Spinner(this).apply {
+                      adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, sizeOptions)
+                      val currentScale = prefs.getFloat("eye_scale", 1.0f)
+                      setSelection(sizeValues.indexOf(currentScale).coerceAtLeast(1))
+                      onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                          override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                              prefs.edit().putFloat("eye_scale", sizeValues[pos]).apply()
+                          }
+                          override fun onNothingSelected(parent: AdapterView<*>?) {}
+                      }
+                  }
+                  robotCustomContainer.addView(sizeSpinner)
+
+                  choiceFloat("Tono de Voz (Robot)", "voice_pitch", listOf("Grave", "Normal", "Agudo / Bot R2D2"), listOf(0.7f, 1.0f, 1.4f), 1.4f)
+                  choiceFloat("Velocidad de Voz", "voice_speed", listOf("Lenta", "Normal", "Rápida"), listOf(0.8f, 1.0f, 1.25f), 1.0f)
+
+                  rootLayout.addView(robotCustomContainer)
+
+                  btnToggleCustom.setOnClickListener {
+                      robotCustomContainer.visibility = if (robotCustomContainer.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                  }
+
+                  val track = CheckBox(this).apply {
+                      text = "Seguir mi rostro con cámara frontal"
+                      setTextColor(Color.WHITE)
+                      isChecked = prefs.getBoolean("track", true)
+                      setOnCheckedChangeListener { _, on ->
+                          prefs.edit().putBoolean("track", on).apply()
+                      }
+                  }
+                  rootLayout.addView(track)
+
+                  result = TextView(this).apply {
+                      setTextColor(Color.parseColor("#00E5FF"))
+                      setPadding(0, 15, 0, 15)
+                      gravity = Gravity.CENTER
+                  }
+                  rootLayout.addView(result)
+
+                  val start = Button(this).apply {
+                      text = "🟢 ENCENDER ROBOT FLOTANTE"
+                      setBackgroundColor(Color.parseColor("#00C853"))
+                      setTextColor(Color.WHITE)
+                      typeface = Typeface.DEFAULT_BOLD
+                  }
+                  
+                  val stop = Button(this).apply {
+                      text = "🔴 APAGAR ROBOT"
+                      setBackgroundColor(Color.parseColor("#D50000"))
+                      setTextColor(Color.WHITE)
+                      typeface = Typeface.DEFAULT_BOLD
+                  }
+
+                  start.setOnClickListener {
+                      if (!Settings.canDrawOverlays(this)) {
+                          startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                      } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                          requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA), 2)
+                      } else {
+                          startForegroundService(Intent(this, OverlayService::class.java))
+                          result.text = "🤖 Robot IA comercial activo en pantalla."
+                      }
+                  }
+
+                  stop.setOnClickListener {
+                      stopService(Intent(this, OverlayService::class.java))
+                      result.text = "🤖 Robot IA apagado."
+                  }
+
+                  rootLayout.addView(start)
+                  rootLayout.addView(stop)
+
+                  setContentView(ScrollView(this).apply { 
+                      setBackgroundColor(Color.parseColor("#0B0F19"))
+                      addView(rootLayout) 
+                  })
+              }
+          }
+          EOF
+
+      - name: Compilar APK Comercial
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: robot-ia-apk-commercial
+          path: app/build/outputs/apk/debug/app-debug.apk
