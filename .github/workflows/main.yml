@@ -1,4 +1,4 @@
-name: Build APK Robot IA Commercial Cloud
+name: Build APK Robot IA Ultimate Commercial
 
 on:
   workflow_dispatch:
@@ -20,7 +20,7 @@ jobs:
         with:
           gradle-version: 8.7
 
-      - name: Generar proyecto Android Comercial
+      - name: Generar proyecto Android con Isla Dinámica y Sonidos Cozmo/R2D2
         run: |
           mkdir -p app/src/main/java/com/robotia/app
           mkdir -p app/src/main/res/mipmap-anydpi-v26
@@ -68,8 +68,8 @@ jobs:
                   applicationId = "com.robotia.app"
                   minSdk = 26
                   targetSdk = 34
-                  versionCode = 20
-                  versionName = "2.0"
+                  versionCode = 30
+                  versionName = "3.0"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -128,11 +128,11 @@ jobs:
               android:viewportWidth="108"
               android:viewportHeight="108">
               <path
-                  android:fillColor="#0B0F19"
+                  android:fillColor="#080C14"
                   android:pathData="M0,0h108v108h-108z"/>
               <path
                   android:fillColor="#00E5FF"
-                  android:pathData="M30,42h16v24h-16zM62,42h16v24h-16z"/>
+                  android:pathData="M32,44h14v20h-14zM62,44h14v20h-14z"/>
           </vector>
           EOF
 
@@ -145,7 +145,7 @@ jobs:
 
           cat > app/src/main/res/values/colors.xml <<'EOF'
           <resources>
-              <color name="ic_launcher_background">#0B0F19</color>
+              <color name="ic_launcher_background">#080C14</color>
           </resources>
           EOF
 
@@ -158,7 +158,6 @@ jobs:
           import java.net.URL
 
           object Llm {
-              // URL oficial de tu nube privada en Render conectada y lista[span_1](start_span)[span_1](end_span)
               private const val CLOUD_PROXY_URL = "https://robot-ia-cloud.onrender.com/api/chat"
 
               class LlmError(val code: Int, message: String) : Exception(message)
@@ -214,6 +213,7 @@ jobs:
           import android.os.Handler
           import android.os.Looper
           import android.view.View
+          import android.view.animation.DecelerateInterpolator
 
           class EyesView(ctx: Context) : View(ctx) {
               companion object {
@@ -221,19 +221,27 @@ jobs:
                   const val LISTENING = 1
                   const val THINKING = 2
                   const val SPEAKING = 3
+                  const val TYPING = 4
 
                   val EXPR_NAMES = listOf(
                       "neutral", "feliz", "triste", "enojado",
                       "sorprendido", "amor", "sueno", "guino"
                   )
                   val COLORS = intArrayOf(
-                      Color.rgb(0, 229, 255), Color.rgb(60, 235, 120), Color.rgb(70, 130, 255),
-                      Color.rgb(255, 110, 190), Color.rgb(255, 150, 40), Color.WHITE,
-                      Color.rgb(255, 70, 70), Color.rgb(255, 220, 60)
+                      Color.rgb(0, 242, 254),
+                      Color.rgb(52, 199, 89),
+                      Color.rgb(0, 122, 255),
+                      Color.rgb(255, 45, 85),
+                      Color.rgb(255, 149, 0),
+                      Color.rgb(255, 255, 255),
+                      Color.rgb(255, 59, 48),
+                      Color.rgb(255, 204, 0)
                   )
               }
 
-              private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+              private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                  setShadowLayer(16f, 0f, 0f, Color.argb(120, 0, 242, 254))
+              }
               private val density = ctx.resources.displayMetrics.density
               private var open = 1f
               private var lx = 0f
@@ -260,37 +268,46 @@ jobs:
 
               fun lookAt(x: Float, y: Float) {
                   tracking = true
-                  val sx = lx
-                  val sy = ly
-                  val a = ValueAnimator.ofFloat(0f, 1f)
-                  a.duration = 150
-                  a.addUpdateListener {
-                      val t = it.animatedValue as Float
-                      lx = sx + (x - sx) * t
-                      ly = sy + (y - sy) * t
-                      invalidate()
-                  }
-                  a.start()
+                  animateGaze(x, y)
               }
 
               fun idleLook() {
                   tracking = false
+                  animateGaze((-0.5f..0.5f).random(), 0f)
+              }
+
+              private fun animateGaze(targetX: Float, targetY: Float) {
+                  val sx = lx
+                  val sy = ly
+                  val a = ValueAnimator.ofFloat(0f, 1f).apply {
+                      duration = 220
+                      interpolator = DecelerateInterpolator()
+                      addUpdateListener {
+                          val t = it.animatedValue as Float
+                          lx = sx + (targetX - sx) * t
+                          ly = sy + (targetY - sy) * t
+                          invalidate()
+                      }
+                  }
+                  a.start()
               }
 
               private val loop = object : Runnable {
                   override fun run() {
-                      val a = ValueAnimator.ofFloat(1f, 0.1f, 1f)
-                      a.duration = 180
-                      a.addUpdateListener {
-                          open = it.animatedValue as Float
-                          invalidate()
-                      }
-                      a.start()
-                      if (!tracking) {
-                          lx = (-1..1).random().toFloat() * 0.8f
+                      if (!tracking && state == IDLE) {
+                          val a = ValueAnimator.ofFloat(1f, 0.05f, 1f).apply {
+                              duration = 200
+                              interpolator = DecelerateInterpolator()
+                              addUpdateListener {
+                                  open = it.animatedValue as Float
+                                  invalidate()
+                              }
+                          }
+                          a.start()
+                          lx = (-0.6f..0.6f).random()
                           ly = 0f
                       }
-                      handler.postDelayed(this, (3500..6500).random().toLong())
+                      handler.postDelayed(this, (3000..6000).random().toLong())
                   }
               }
 
@@ -304,39 +321,41 @@ jobs:
 
               override fun onMeasure(w: Int, h: Int) {
                   setMeasuredDimension(
-                      (130 * density * sizeScale).toInt(),
-                      (50 * density * sizeScale).toInt()
+                      (140 * density * sizeScale).toInt(),
+                      (52 * density * sizeScale).toInt()
                   )
               }
 
               override fun onDraw(c: Canvas) {
                   val w = width.toFloat()
                   val h = height.toFloat()
-                  val eh = h * 0.8f
+                  val eh = h * 0.82f
                   val ew = when (shape) {
-                      0 -> eh * 0.9f
-                      2 -> eh * 0.55f
-                      else -> eh
+                      0 -> eh * 0.92f
+                      2 -> eh * 0.52f
+                      else -> eh * 0.78f
                   }
                   val cy = h / 2
-                  val dx = if (state == THINKING) 0.8f else lx
-                  val dy = if (state == THINKING) -0.8f else ly
+                  val dx = if (state == THINKING) 0.7f else if (state == TYPING) 0f else lx
+                  val dy = if (state == THINKING) -0.7f else if (state == TYPING) 0.85f else ly
+
+                  fill.color = eyeColor
+                  fill.setShadowLayer(18f, 0f, 0f, eyeColor)
 
                   for (i in 0..1) {
-                      fill.color = eyeColor
-                      val cx = (if (i == 0) w * 0.3f else w * 0.7f) + dx * eh * 0.4f
-                      drawEye(c, i, cx, cy + dy * eh * 0.3f, ew, eh)
+                      val cx = (if (i == 0) w * 0.3f else w * 0.7f) + dx * eh * 0.35f
+                      drawDynamicEye(c, i, cx, cy + dy * eh * 0.3f, ew, eh)
                   }
               }
 
-              private fun drawEye(c: Canvas, i: Int, cx: Float, cy: Float, ew: Float, eh: Float) {
+              private fun drawDynamicEye(c: Canvas, i: Int, cx: Float, cy: Float, ew: Float, eh: Float) {
                   val ex = expression
                   if (ex == 5) {
                       heart(c, cx, cy, eh)
                       return
                   }
                   var hh = eh * open
-                  if (ex == 7 && i == 1) hh = eh * 0.15f
+                  if (ex == 7 && i == 1) hh = eh * 0.18f
                   if (hh < 6f) hh = 6f
 
                   val rect = RectF(cx - ew / 2f, cy - hh / 2f, cx + ew / 2f, cy + hh / 2f)
@@ -345,13 +364,14 @@ jobs:
               }
 
               private fun heart(c: Canvas, cx: Float, cy: Float, eh: Float) {
-                  val s = eh * 0.6f * (0.85f + 0.15f * open)
-                  val p = Path()
-                  p.moveTo(cx, cy + s)
-                  p.cubicTo(cx - s * 1.6f, cy - s * 0.2f, cx - s * 0.7f, cy - s * 1.3f, cx, cy - s * 0.45f)
-                  p.cubicTo(cx + s * 0.7f, cy - s * 1.3f, cx + s * 1.6f, cy - s * 0.2f, cx, cy + s)
-                  p.close()
-                  fill.color = Color.rgb(255, 80, 120)
+                  val s = eh * 0.55f * (0.85f + 0.15f * open)
+                  val p = Path().apply {
+                      moveTo(cx, cy + s)
+                      cubicTo(cx - s * 1.6f, cy - s * 0.2f, cx - s * 0.7f, cy - s * 1.3f, cx, cy - s * 0.45f)
+                      cubicTo(cx + s * 0.7f, cy - s * 1.3f, cx + s * 1.6f, cy - s * 0.2f, cx, cy + s)
+                      close()
+                  }
+                  fill.color = Color.rgb(255, 45, 85)
                   c.drawPath(p, fill)
                   fill.color = eyeColor
               }
@@ -406,7 +426,7 @@ jobs:
 
           class OverlayService : Service() {
               companion object {
-                  const val SYSTEM_BASE = "Eres Robot IA, un asistente cibernético avanzado estilo Cozmo y Astro Bot que vive en la pantalla del usuario. Responde en español, de forma cálida y en una o dos frases cortas. Empieza SIEMPRE con una emoción: [neutral], [feliz], [triste], [enojado], [sorprendido], [amor], [sueno] o [guino]. Si te piden acción del sistema, añade [ACCION:...]. Si te dan un dato personal, añade [MEMORIA:...]."
+                  const val SYSTEM_BASE = "Eres Robot IA, un adorable y avanzado asistente cibernético estilo Cozmo, R2D2 y Astro Bot. Tienes una personalidad cálida, amigable y cercana, y estás conociendo profundamente al usuario. Responde en español de forma natural, carismática y concisa (1 o 2 frases). Empieza SIEMPRE tu respuesta con una emoción entre corchetes: [neutral], [feliz], [triste], [enojado], [sorprendido], [amor], [sueno] o [guino]. Si te dan datos personales o gustos, guárdalos añadiendo [MEMORIA:tu_recuerdo]."
               }
 
               private lateinit var wm: WindowManager
@@ -418,7 +438,6 @@ jobs:
               private var ttsReady = false
               private val history = JSONArray()
               private var turn = 0
-              private var pendingAction: String? = null
 
               private var camera: CameraDevice? = null
               private var session: CameraCaptureSession? = null
@@ -430,24 +449,25 @@ jobs:
               private var lastFace = 0L
               private var lastSeen = 0L
 
-              private val r2d2Sounds = listOf("bip bop bzzzt", "wub wup beep", "chirp zzt boop", "whirrr bip", "piip bloop zzt")
+              private val robotSounds = listOf(
+                  "bip bop zzt wup", "weee-boop bzzzt", "chirp zzt bloop", 
+                  "whirrr bip beep", "piip bloop zzt-zzt", "zrt-boop wub"
+              )
+
               private val idleSoundRunnable = object : Runnable {
                   override fun run() {
                       if (ttsReady && eyes.state == EyesView.IDLE) {
-                          val randomSound = r2d2Sounds.random()
-                          val randomExpr = (1..7).random()
-                          eyes.expression = randomExpr
+                          val sound = robotSounds.random()
+                          eyes.expression = (1..7).random()
                           val prefs = getSharedPreferences("robot", MODE_PRIVATE)
-                          val pitch = prefs.getFloat("voice_pitch", 1.4f)
-                          val speed = prefs.getFloat("voice_speed", 1.1f)
-                          tts?.setPitch(pitch)
-                          tts?.setSpeechRate(speed)
-                          tts?.speak(randomSound, TextToSpeech.QUEUE_FLUSH, null, "r2d2")
+                          tts?.setPitch(prefs.getFloat("voice_pitch", 1.45f))
+                          tts?.setSpeechRate(prefs.getFloat("voice_speed", 1.15f))
+                          tts?.speak(sound, TextToSpeech.QUEUE_FLUSH, null, "r2d2")
                           handler.postDelayed({
                               if (eyes.state == EyesView.IDLE) eyes.expression = 0
-                          }, 1500)
+                          }, 1400)
                       }
-                      handler.postDelayed(this, (7000..13000).random().toLong())
+                      handler.postDelayed(this, (6000..11000).random().toLong())
                   }
               }
 
@@ -465,8 +485,8 @@ jobs:
                   eyes.shape = sp.getInt("eye_shape", 1).coerceIn(0, 2)
                   eyes.sizeScale = sp.getFloat("eye_scale", 1.0f)
                   
-                  val pitch = sp.getFloat("voice_pitch", 1.4f)
-                  val speed = sp.getFloat("voice_speed", 1.1f)
+                  val pitch = sp.getFloat("voice_pitch", 1.45f)
+                  val speed = sp.getFloat("voice_speed", 1.15f)
                   tts?.setPitch(pitch)
                   tts?.setSpeechRate(speed)
 
@@ -476,9 +496,7 @@ jobs:
 
                   eyes.requestLayout()
                   eyes.invalidate()
-                  try {
-                      wm.updateViewLayout(eyes, params)
-                  } catch (e: Exception) {}
+                  try { wm.updateViewLayout(eyes, params) } catch (e: Exception) {}
               }
 
               override fun onCreate() {
@@ -492,9 +510,11 @@ jobs:
                       .setContentTitle("Robot IA Activo")
                       .setSmallIcon(android.R.drawable.ic_dialog_info)
                       .build()
+
                   val prefs = getSharedPreferences("robot", MODE_PRIVATE)
-                  val camOk = prefs.getBoolean("track", true) &&
+                  val camOk = prefs.getBoolean("cam_enabled", true) &&
                       checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
                   if (Build.VERSION.SDK_INT >= 29) {
                       var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
                       if (Build.VERSION.SDK_INT >= 34) {
@@ -509,11 +529,7 @@ jobs:
                   tts = TextToSpeech(this) { status ->
                       if (status == TextToSpeech.SUCCESS) {
                           tts?.language = Locale.getDefault()
-                          val pitch = prefs.getFloat("voice_pitch", 1.4f)
-                          val speed = prefs.getFloat("voice_speed", 1.1f)
-                          tts?.setPitch(pitch)
-                          tts?.setSpeechRate(speed)
-
+                          applyPrefs()
                           tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                               override fun onStart(id: String?) {}
                               override fun onDone(id: String?) {
@@ -525,7 +541,7 @@ jobs:
                               }
                           })
                           ttsReady = true
-                          speak("¡Bip bop! Sistema en línea.", "feliz")
+                          speak("¡Bip bop! Hola, ya estoy contigo.", "feliz")
                       }
                   }
 
@@ -564,18 +580,11 @@ jobs:
                               if (abs(dx) > 15 || abs(dy) > 15) moved = true
                               params.x = startX + dx
                               params.y = startY + dy
-                              try {
-                                  wm.updateViewLayout(eyes, params)
-                              } catch (ex: Exception) {}
+                              try { wm.updateViewLayout(eyes, params) } catch (ex: Exception) {}
                           }
                           MotionEvent.ACTION_UP -> {
-                              if (!moved) {
-                                  onTap()
-                              } else {
-                                  prefs.edit()
-                                      .putInt("posx", params.x)
-                                      .putInt("posy", params.y)
-                                      .apply()
+                              if (!moved) onTap() else {
+                                  prefs.edit().putInt("posx", params.x).putInt("posy", params.y).apply()
                               }
                           }
                       }
@@ -585,7 +594,7 @@ jobs:
                   applyPrefs()
                   prefs.registerOnSharedPreferenceChangeListener(prefListener)
 
-                  handler.postDelayed(idleSoundRunnable, 8000)
+                  handler.postDelayed(idleSoundRunnable, 7000)
 
                   if (camOk) startCamera()
               }
@@ -601,8 +610,7 @@ jobs:
                       val rot = ch.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 270
                       val sizes = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
                           ?.getOutputSizes(ImageFormat.YUV_420_888) ?: return
-                      val size = sizes
-                          .filter { it.width >= 320 && it.height >= 240 }
+                      val size = sizes.filter { it.width >= 320 && it.height >= 240 }
                           .minByOrNull { it.width * it.height } ?: sizes.first()
                       val step = maxOf(1, size.width / 320)
                       val ht = HandlerThread("cam")
@@ -611,15 +619,10 @@ jobs:
                       val bg = Handler(ht.looper)
                       cm.openCamera(id, object : CameraDevice.StateCallback() {
                           override fun onOpened(cam: CameraDevice) {
-                              if (camThread == null) {
-                                  cam.close()
-                                  return
-                              }
+                              if (camThread == null) { cam.close(); return }
                               camera = cam
                               try {
-                                  val ir = ImageReader.newInstance(
-                                      size.width, size.height, ImageFormat.YUV_420_888, 2
-                                  )
+                                  val ir = ImageReader.newInstance(size.width, size.height, ImageFormat.YUV_420_888, 2)
                                   reader = ir
                                   ir.setOnImageAvailableListener({ r ->
                                       var img: Image? = null
@@ -631,25 +634,19 @@ jobs:
                                               processImage(img, rot, step)
                                           }
                                       } catch (e: Exception) {
-                                      } finally {
-                                          img?.close()
-                                      }
+                                      } finally { img?.close() }
                                   }, bg)
-                                  cam.createCaptureSession(
-                                      listOf(ir.surface),
-                                      object : CameraCaptureSession.StateCallback() {
-                                          override fun onConfigured(s: CameraCaptureSession) {
-                                              session = s
-                                              try {
-                                                  val req = cam.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-                                                  req.addTarget(ir.surface)
-                                                  s.setRepeatingRequest(req.build(), null, bg)
-                                              } catch (e: Exception) {}
-                                          }
-                                          override fun onConfigureFailed(s: CameraCaptureSession) {}
-                                      },
-                                      bg
-                                  )
+                                  cam.createCaptureSession(listOf(ir.surface), object : CameraCaptureSession.StateCallback() {
+                                      override fun onConfigured(s: CameraCaptureSession) {
+                                          session = s
+                                          try {
+                                              val req = cam.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+                                              req.addTarget(ir.surface)
+                                              s.setRepeatingRequest(req.build(), null, bg)
+                                          } catch (e: Exception) {}
+                                      }
+                                      override fun onConfigureFailed(s: CameraCaptureSession) {}
+                                  }, bg)
                               } catch (e: Exception) {}
                           }
                           override fun onDisconnected(cam: CameraDevice) { cam.close() }
@@ -682,22 +679,13 @@ jobs:
                               else -> { xs = xu; ys = yu }
                           }
                           val v = buf.get(ys * step * rs + xs * step * ps).toInt() and 0xFF
-                          px[yu * uw + xu] =
-                              (((v shr 3) shl 11) or ((v shr 2) shl 5) or (v shr 3)).toShort()
+                          px[yu * uw + xu] = (((v shr 3) shl 11) or ((v shr 2) shl 5) or (v shr 3)).toShort()
                       }
                   }
                   val bmp = Bitmap.createBitmap(uw, uh, Bitmap.Config.RGB_565)
                   bmp.copyPixelsFromBuffer(ShortBuffer.wrap(px))
                   val cached = detector
-                  val det = if (cached != null && detW == uw && detH == uh) {
-                      cached
-                  } else {
-                      FaceDetector(uw, uh, 1).also {
-                          detector = it
-                          detW = uw
-                          detH = uh
-                      }
-                  }
+                  val det = cached ?: FaceDetector(uw, uh, 1).also { detector = it; detW = uw; detH = uh }
                   val faces = arrayOfNulls<FaceDetector.Face>(1)
                   val n = det.findFaces(bmp, faces)
                   bmp.recycle()
@@ -737,12 +725,11 @@ jobs:
                   recognizer = null
                   tts?.stop()
                   eyes.state = EyesView.IDLE
-                  pendingAction = null
               }
 
               private fun listen() {
                   if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-                      speak("Reconocimiento de voz no disponible", "triste")
+                      speak("No tengo acceso al reconocimiento de voz", "triste")
                       return
                   }
                   recognizer?.destroy()
@@ -762,9 +749,10 @@ jobs:
                       override fun onPartialResults(p: Bundle?) {}
                       override fun onEvent(type: Int, p: Bundle?) {}
                   })
-                  val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                  val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                      putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                      putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                  }
                   eyes.state = EyesView.LISTENING
                   r.startListening(i)
               }
@@ -776,26 +764,11 @@ jobs:
                   val prefs = getSharedPreferences("robot", MODE_PRIVATE)
                   val rawMem = prefs.getString("robot_memory_json", "[]") ?: "[]"
                   val memArray = JSONArray(rawMem)
-                  val filteredArray = JSONArray()
-                  val sevenDaysMillis = 7L * 24 * 60 * 60 * 1000
-                  val now = System.currentTimeMillis()
                   val memoryBuilder = StringBuilder()
-
                   for (i in 0 until memArray.length()) {
-                      val item = memArray.getJSONObject(i)
-                      if (now - item.getLong("time") <= sevenDaysMillis) {
-                          filteredArray.put(item)
-                          memoryBuilder.append(item.getString("text")).append("; ")
-                      }
+                      memoryBuilder.append(memArray.getJSONObject(i).getString("text")).append("; ")
                   }
-                  prefs.edit().putString("robot_memory_json", filteredArray.toString()).apply()
-
-                  val savedMemory = memoryBuilder.toString()
-                  val fullSystem = if (savedMemory.isNotBlank()) {
-                      SYSTEM_BASE + " Recuerdos guardados (últimos 7 días): " + savedMemory
-                  } else {
-                      SYSTEM_BASE
-                  }
+                  val fullSystem = SYSTEM_BASE + if (memoryBuilder.isNotEmpty()) " Recuerdos sobre el usuario: $memoryBuilder" else ""
 
                   val mine = ++turn
                   Thread {
@@ -803,41 +776,32 @@ jobs:
                       val reply = try {
                           Llm.chat(fullSystem, msgs)
                       } catch (e: Exception) {
-                          err = e.message ?: "Error desconocido"
-                          "Problema de red."
+                          err = e.message ?: "Error de red"
+                          "Bip... problema de conexión."
                       }
                       handler.post {
                           if (mine == turn) {
-                              val f = err
-                              if (f == null) {
-                                  history.put(msg("assistant", reply))
-                              } else {
-                                  history.remove(history.length() - 1)
-                                  Toast.makeText(this, f, Toast.LENGTH_LONG).show()
+                              if (err == null) history.put(msg("assistant", reply))
+                              else {
+                                  if (history.length() > 0) history.remove(history.length() - 1)
                               }
-                              while (history.length() > 20) {
-                                  history.remove(0)
-                                  history.remove(0)
-                              }
-                              if (f == null) {
-                                  val cleanReply = parseMemory(reply)
-                                  val parsedEmotion = parseEmotion(cleanReply)
-                                  speak(parsedEmotion.second, parsedEmotion.first)
-                              } else {
-                                  speak(reply, "triste")
-                              }
+                              while (history.length() > 20) { history.remove(0); history.remove(0) }
+                              
+                              val cleanReply = parseMemory(reply)
+                              val parsedEmotion = parseEmotion(cleanReply)
+                              speak(parsedEmotion.second, parsedEmotion.first)
                           }
                       }
                   }.start()
               }
 
               private fun parseEmotion(reply: String): Pair<String, String> {
-                  val m = Regex("^\\s*\\[([^\\]]{1,15})\\]\\s*").find(reply) ?: return Pair("", reply)
+                  val m = Regex("^\\s*\\[([^\\]]{1,15})\\]\\s*").find(reply) ?: return Pair("feliz", reply)
                   val raw = Normalizer.normalize(m.groupValues[1].lowercase(), Normalizer.Form.NFD)
                       .replace(Regex("\\p{M}"), "")
                   val idx = EyesView.EXPR_NAMES.indexOfFirst { raw.startsWith(it.take(3)) }
                   val text = reply.substring(m.range.last + 1).ifBlank { reply }
-                  return Pair(if (idx >= 0) EyesView.EXPR_NAMES[idx] else "", text)
+                  return Pair(if (idx >= 0) EyesView.EXPR_NAMES[idx] else "feliz", text)
               }
 
               private fun parseMemory(reply: String): String {
@@ -846,17 +810,16 @@ jobs:
                   if (match != null) {
                       val newMem = match.groupValues[1]
                       val prefs = getSharedPreferences("robot", MODE_PRIVATE)
-                      val rawMem = prefs.getString("robot_memory_json", "[]") ?: "[]"
-                      val memArray = JSONArray(rawMem)
-                      val newObj = JSONObject().put("time", System.currentTimeMillis()).put("text", newMem)
-                      memArray.put(newObj)
+                      val memArray = JSONArray(prefs.getString("robot_memory_json", "[]") ?: "[]")
+                      memArray.put(JSONObject().put("time", System.currentTimeMillis()).put("text", newMem))
                       prefs.edit().putString("robot_memory_json", memArray.toString()).apply()
                   }
                   return reply.replace(memRegex, "").trim()
               }
 
               private fun ask(text: String) {
-                  eyes.state = EyesView.THINKING
+                  eyes.state = EyesView.TYPING
+                  handler.postDelayed({ eyes.state = EyesView.THINKING }, 400)
                   history.put(msg("user", text))
                   callLlm(history)
               }
@@ -864,7 +827,10 @@ jobs:
               private fun speak(text: String, emo: String = "") {
                   eyes.state = EyesView.SPEAKING
                   val idx = EyesView.EXPR_NAMES.indexOf(emo)
-                  eyes.expression = if (idx > 0) idx else 0
+                  eyes.expression = if (idx >= 0) idx else 1
+                  val prefs = getSharedPreferences("robot", MODE_PRIVATE)
+                  tts?.setPitch(prefs.getFloat("voice_pitch", 1.45f))
+                  tts?.setSpeechRate(prefs.getFloat("voice_speed", 1.15f))
                   tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "robot")
               }
 
@@ -877,7 +843,7 @@ jobs:
                   tts?.shutdown()
                   if (::eyes.isInitialized) {
                       eyes.stopBlinking()
-                      wm.removeView(eyes)
+                      try { wm.removeView(eyes) } catch (e: Exception) {}
                   }
                   super.onDestroy()
               }
@@ -933,189 +899,160 @@ jobs:
                       orientation = LinearLayout.VERTICAL
                       gravity = Gravity.CENTER_HORIZONTAL
                       setPadding(pad, pad, pad, pad)
-                      setBackgroundColor(Color.parseColor("#0B0F19"))
+                      setBackgroundColor(Color.parseColor("#080C14"))
                   }
 
                   val animSet = AnimationSet(true).apply {
                       addAnimation(AlphaAnimation(0f, 1f).apply { duration = 400 })
-                      addAnimation(ScaleAnimation(0.9f, 1f, 0.9f, 1f, ScaleAnimation.RELATIVE_TO_SELF, 0.5f, ScaleAnimation.RELATIVE_TO_SELF, 0.5f).apply { duration = 400 })
+                      addAnimation(ScaleAnimation(0.92f, 1f, 0.92f, 1f, ScaleAnimation.RELATIVE_TO_SELF, 0.5f, ScaleAnimation.RELATIVE_TO_SELF, 0.5f).apply { duration = 400 })
                   }
                   rootLayout.startAnimation(animSet)
 
                   val logoView = TextView(this).apply {
-                      text = "🤖 ROBOT IA PRO"
-                      textSize = 26f
+                      text = "🤖 ROBOT IA"
+                      textSize = 28f
                       typeface = Typeface.DEFAULT_BOLD
-                      setTextColor(Color.parseColor("#00E5FF"))
+                      setTextColor(Color.parseColor("#00F2FE"))
                       gravity = Gravity.CENTER
-                      setPadding(0, pad, 0, pad / 2)
-                      setShadowLayer(14f, 0f, 0f, Color.parseColor("#00E5FF"))
+                      setPadding(0, pad, 0, pad / 3)
+                      setShadowLayer(16f, 0f, 0f, Color.parseColor("#00F2FE"))
                   }
                   rootLayout.addView(logoView)
 
-                  val info = TextView(this).apply {
-                      text = "Panel Comercial • Plug & Play (Sin Configuración)"
-                      setTextColor(Color.parseColor("#A0AEC0"))
+                  val subtitle = TextView(this).apply {
+                      text = "Tu compañero cibernético inteligente"
+                      setTextColor(Color.parseColor("#8E9AAF"))
                       textSize = 14f
                       gravity = Gravity.CENTER
+                      setPadding(0, 0, 0, pad)
                   }
-                  rootLayout.addView(info)
+                  rootLayout.addView(subtitle)
 
                   val btnToggleCustom = Button(this).apply {
-                      text = "⚙️ Personalización Ilimitada del Robot"
-                      setBackgroundColor(Color.parseColor("#1A202C"))
-                      setTextColor(Color.parseColor("#00E5FF"))
+                      text = "⚙️ Personalización"
+                      setBackgroundColor(Color.parseColor("#161F30"))
+                      setTextColor(Color.parseColor("#00F2FE"))
                       typeface = Typeface.DEFAULT_BOLD
-                      setPadding(0, 15, 0, 15)
+                      setPadding(0, 20, 0, 20)
                   }
                   rootLayout.addView(btnToggleCustom)
 
-                  val robotCustomContainer = LinearLayout(this).apply {
+                  val customContainer = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
                       visibility = View.GONE
-                      setPadding(0, 15, 0, 15)
-                      setBackgroundColor(Color.parseColor("#121826"))
+                      setPadding(0, 16, 0, 16)
+                      setBackgroundColor(Color.parseColor("#0F172A"))
                   }
 
-                  val customInfo = TextView(this).apply {
-                      text = "Ajusta tamaño, forma, color y voz a tu gusto:"
-                      setTextColor(Color.WHITE)
-                      textSize = 13f
-                      setPadding(10, 5, 10, 5)
-                  }
-                  robotCustomContainer.addView(customInfo)
-
-                  fun choice(name: String, key: String, options: List<String>, def: Int) {
-                      robotCustomContainer.addView(TextView(this).apply { 
-                          text = name
-                          setTextColor(Color.parseColor("#A0AEC0"))
-                          setPadding(10, 5, 10, 2)
+                  fun addSpinner(label: String, key: String, options: List<String>, values: List<Any>, defIndex: Int) {
+                      customContainer.addView(TextView(this).apply {
+                          text = label
+                          setTextColor(Color.parseColor("#8E9AAF"))
+                          textSize = 13f
+                          setPadding(12, 8, 12, 2)
                       })
-                      val sp = Spinner(this)
-                      sp.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, options)
-                      sp.setSelection(prefs.getInt(key, def).coerceIn(0, options.size - 1))
-                      sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                          override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                              prefs.edit().putInt(key, pos).apply()
-                          }
-                          override fun onNothingSelected(parent: AdapterView<*>?) {}
+                      val sp = Spinner(this).apply {
+                          adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, options)
                       }
-                      robotCustomContainer.addView(sp)
+                      if (values.first() is Int) {
+                          sp.setSelection(prefs.getInt(key, defIndex).coerceIn(0, options.size - 1))
+                          sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                              override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                                  prefs.edit().putInt(key, pos).apply()
+                              }
+                              override fun onNothingSelected(parent: AdapterView<*>?) {}
+                          }
+                      } else if (values.first() is Float) {
+                          val current = prefs.getFloat(key, values[defIndex] as Float)
+                          sp.setSelection(values.indexOf(current).coerceAtLeast(0))
+                          sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                              override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                                  prefs.edit().putFloat(key, values[pos] as Float).apply()
+                              }
+                              override fun onNothingSelected(parent: AdapterView<*>?) {}
+                          }
+                      }
+                      customContainer.addView(sp)
                   }
 
-                  fun choiceFloat(name: String, key: String, options: List<String>, values: List<Float>, def: Float) {
-                      robotCustomContainer.addView(TextView(this).apply { 
-                          text = name
-                          setTextColor(Color.parseColor("#A0AEC0"))
-                          setPadding(10, 5, 10, 2)
-                      })
-                      val sp = Spinner(this)
-                      sp.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, options)
-                      val currentVal = prefs.getFloat(key, def)
-                      sp.setSelection(values.indexOf(currentVal).coerceAtLeast(0))
-                      sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                          override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                              prefs.edit().putFloat(key, values[pos]).apply()
-                          }
-                          override fun onNothingSelected(parent: AdapterView<*>?) {}
-                      }
-                      robotCustomContainer.addView(sp)
-                  }
+                  addSpinner("Forma de Ojos (Isla Dinámica)", "eye_shape", listOf("Redondos", "Suaves", "Cápsulas"), listOf(0, 1, 2), 1)
+                  addSpinner("Color Neón", "eye_color", listOf("Cian Apple", "Verde Matrix", "Azul Pro", "Rosa Fucsia", "Naranja Cozmo", "Blanco Puro", "Rojo Alerta", "Amarillo Bot"), listOf(0,1,2,3,4,5,6,7), 0)
+                  addSpinner("Tamaño de Ojos", "eye_scale", listOf("Pequeño (0.8x)", "Normal (1.0x)", "Grande (1.3x)", "Gigante (1.6x)"), listOf(0.8f, 1.0f, 1.3f, 1.6f), 1)
+                  addSpinner("Tono de Voz Robótica", "voice_pitch", listOf("Grave", "Normal", "Agudo / R2D2"), listOf(0.7f, 1.0f, 1.45f), 2)
+                  addSpinner("Velocidad de Voz", "voice_speed", listOf("Lenta", "Normal", "Rápida"), listOf(0.8f, 1.0f, 1.25f), 1)
 
-                  choice("Forma de Ojos", "eye_shape", listOf("Redondos", "Suaves", "Cápsulas"), 1)
-                  choice("Color de Ojos", "eye_color", listOf("Cian Tech", "Verde Matrix", "Azul Neón", "Rosa Fucsia", "Naranja Pro", "Blanco Puro", "Rojo Alerta", "Amarillo Bot"), 0)
-                  
-                  robotCustomContainer.addView(TextView(this).apply { 
-                      text = "Escala / Tamaño de Ojos"
-                      setTextColor(Color.parseColor("#A0AEC0"))
-                      setPadding(10, 5, 10, 2)
-                  })
-                  val sizeOptions = listOf("Pequeño (0.8x)", "Normal (1.0x)", "Grande (1.3x)", "Gigante (1.6x)")
-                  val sizeValues = listOf(0.8f, 1.0f, 1.3f, 1.6f)
-                  val sizeSpinner = Spinner(this).apply {
-                      adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, sizeOptions)
-                      val currentScale = prefs.getFloat("eye_scale", 1.0f)
-                      setSelection(sizeValues.indexOf(currentScale).coerceAtLeast(1))
-                      onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                          override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                              prefs.edit().putFloat("eye_scale", sizeValues[pos]).apply()
-                          }
-                          override fun onNothingSelected(parent: AdapterView<*>?) {}
-                      }
-                  }
-                  robotCustomContainer.addView(sizeSpinner)
-
-                  choiceFloat("Tono de Voz (Robot)", "voice_pitch", listOf("Grave", "Normal", "Agudo / Bot R2D2"), listOf(0.7f, 1.0f, 1.4f), 1.4f)
-                  choiceFloat("Velocidad de Voz", "voice_speed", listOf("Lenta", "Normal", "Rápida"), listOf(0.8f, 1.0f, 1.25f), 1.0f)
-
-                  rootLayout.addView(robotCustomContainer)
+                  rootLayout.addView(customContainer)
 
                   btnToggleCustom.setOnClickListener {
-                      robotCustomContainer.visibility = if (robotCustomContainer.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                      customContainer.visibility = if (customContainer.visibility == View.VISIBLE) View.GONE else View.VISIBLE
                   }
 
-                  val track = CheckBox(this).apply {
-                      text = "Seguir mi rostro con cámara frontal"
+                  val camToggle = CheckBox(this).apply {
+                      text = "📷 Activar seguimiento de cámara frontal"
                       setTextColor(Color.WHITE)
-                      isChecked = prefs.getBoolean("track", true)
+                      textSize = 14f
+                      isChecked = prefs.getBoolean("cam_enabled", true)
+                      setPadding(0, 20, 0, 10)
                       setOnCheckedChangeListener { _, on ->
-                          prefs.edit().putBoolean("track", on).apply()
+                          prefs.edit().putBoolean("cam_enabled", on).apply()
                       }
                   }
-                  rootLayout.addView(track)
+                  rootLayout.addView(camToggle)
 
                   result = TextView(this).apply {
-                      setTextColor(Color.parseColor("#00E5FF"))
+                      setTextColor(Color.parseColor("#00F2FE"))
                       setPadding(0, 15, 0, 15)
                       gravity = Gravity.CENTER
                   }
                   rootLayout.addView(result)
 
-                  val start = Button(this).apply {
-                      text = "🟢 ENCENDER ROBOT FLOTANTE"
+                  val btnStart = Button(this).apply {
+                      text = "🟢 ENCENDER ROBOT"
                       setBackgroundColor(Color.parseColor("#00C853"))
                       setTextColor(Color.WHITE)
                       typeface = Typeface.DEFAULT_BOLD
+                      setPadding(0, 20, 0, 20)
                   }
                   
-                  val stop = Button(this).apply {
+                  val btnStop = Button(this).apply {
                       text = "🔴 APAGAR ROBOT"
                       setBackgroundColor(Color.parseColor("#D50000"))
                       setTextColor(Color.WHITE)
                       typeface = Typeface.DEFAULT_BOLD
+                      setPadding(0, 20, 0, 20)
                   }
 
-                  start.setOnClickListener {
+                  btnStart.setOnClickListener {
                       if (!Settings.canDrawOverlays(this)) {
                           startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
                       } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                           requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA), 2)
                       } else {
                           startForegroundService(Intent(this, OverlayService::class.java))
-                          result.text = "🤖 Robot IA comercial activo en pantalla."
+                          result.text = "✨ ¡Robot IA activo y flotando en pantalla!"
                       }
                   }
 
-                  stop.setOnClickListener {
+                  btnStop.setOnClickListener {
                       stopService(Intent(this, OverlayService::class.java))
-                      result.text = "🤖 Robot IA apagado."
+                      result.text = "💤 Robot IA apagado."
                   }
 
-                  rootLayout.addView(start)
-                  rootLayout.addView(stop)
+                  rootLayout.addView(btnStart)
+                  rootLayout.addView(btnStop)
 
-                  setContentView(ScrollView(this).apply { 
-                      setBackgroundColor(Color.parseColor("#0B0F19"))
-                      addView(rootLayout) 
+                  setContentView(ScrollView(this).apply {
+                      setBackgroundColor(Color.parseColor("#080C14"))
+                      addView(rootLayout)
                   })
               }
           }
           EOF
 
-      - name: Compilar APK Comercial
+      - name: Compilar APK Definitivo
         run: gradle assembleDebug --no-daemon
 
       - uses: actions/upload-artifact@v4
         with:
-          name: robot-ia-apk-commercial
+          name: robot-ia-apk-ultimate
           path: app/build/outputs/apk/debug/app-debug.apk
